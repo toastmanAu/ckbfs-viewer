@@ -1,17 +1,23 @@
 {
   "name": "ckbfs-viewer",
   "version": "0.1.0",
-  "description": "Standalone viewer for files stored on-chain via the CKBFS protocol on Nervos CKB",
+  "description": "CKBFS on-chain file viewer — companion to ckb-dob-minter",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npx serve . -p 5174",
-    "build": "node build.js",
-    "preview": "npx serve dist -p 5174"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@ckbfs/api": "github:nervape/ckbfs-api"
+    "@ckbfs/api": "github:nervape/ckbfs-api",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
-  "keywords": ["ckb", "ckbfs", "nervos", "blockchain", "viewer"],
-  "license": "MIT"
+  "devDependencies": {
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.0"
+  }
 }
