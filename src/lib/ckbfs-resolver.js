@@ -60,18 +60,23 @@ function decodeCKBFSData(hex) {
   };
 
   if (fieldCount === 4) {
+    // 4-field schema: index(Uint32), checksum, content_type, filename
     return {
-      index:       dv.getUint32(offsets[0], true),
+      indexes:     [dv.getUint32(offsets[0], true)],
       checksum:    dv.getUint32(offsets[1], true),
       contentType: readBytes(offsets[2]),
       filename:    readBytes(offsets[3]),
     };
   } else {
-    // 5-field: indexes is Vec<Uint32> — first element is witness index
-    const idxTotal = dv.getUint32(offsets[0], true);
+    // 5-field schema: indexes(Vec<Uint32>), checksum, content_type, filename, backlinks
+    const idxFieldBytes = data.slice(offsets[0], offsets[1]);
+    const idxDv = new DataView(idxFieldBytes.buffer, idxFieldBytes.byteOffset);
+    const idxTotal = idxDv.getUint32(0, true);
     const indexCount = (idxTotal - 4) / 4;
+    const indexes = [];
+    for (let i = 0; i < indexCount; i++) indexes.push(idxDv.getUint32(4 + i * 4, true));
     return {
-      index:       indexCount > 0 ? dv.getUint32(offsets[0] + 4, true) : 0,
+      indexes,
       checksum:    dv.getUint32(offsets[1], true),
       contentType: readBytes(offsets[2]),
       filename:    readBytes(offsets[3]),
@@ -81,11 +86,13 @@ function decodeCKBFSData(hex) {
 
 // ── Witness content extractor ─────────────────────────────────────────────────
 
-function extractFileFromWitness(witnessHex) {
+function extractChunkFromWitness(witnessHex) {
   const bytes = hexToBytes(witnessHex);
   const magic = new TextDecoder().decode(bytes.slice(0, 5));
   if (magic !== 'CKBFS') throw new Error('Witness missing CKBFS magic header');
   const version = bytes[5];
+  // v2 (0x00): content at byte 6
+  // v3 (0x03): content at byte 50 (6 + 32 prev_tx_hash + 4 prev_idx + 4 prev_checksum + 4 next_idx)
   return bytes.slice(version === 0x03 ? 50 : 6);
 }
 
@@ -93,10 +100,7 @@ function extractFileFromWitness(witnessHex) {
 
 /**
  * Resolve a CKBFS TypeID to its file content and metadata.
- * @param {string} typeId
- * @param {'testnet'|'mainnet'} network
- * @param {(msg: string) => void} [onProgress]
- * @returns {{ fileBytes, contentType, filename, checksum, witnessIdx, txHash }}
+ * Handles multi-chunk files (content split across multiple witnesses).
  */
 export async function resolveCKBFS(typeId, network, onProgress = () => {}) {
   onProgress('Searching for CKBFS cell…');
@@ -119,12 +123,30 @@ export async function resolveCKBFS(typeId, network, onProgress = () => {}) {
   if (!tx) throw new Error('Transaction not found');
 
   const witnesses = tx.witnesses || [];
-  if (meta.index >= witnesses.length) throw new Error(`Witness index ${meta.index} out of range`);
 
-  onProgress(`Extracting ${meta.filename || 'file content'}…`);
-  const fileBytes = extractFileFromWitness(witnesses[meta.index]);
+  // Reassemble all chunks in order
+  onProgress(`Extracting ${meta.filename || 'file'} (${meta.indexes.length} chunk${meta.indexes.length > 1 ? 's' : ''})…`);
+  const chunks = [];
+  for (const idx of meta.indexes) {
+    if (idx >= witnesses.length) throw new Error(`Witness index ${idx} out of range`);
+    chunks.push(extractChunkFromWitness(witnesses[idx]));
+  }
 
-  return { fileBytes, contentType: meta.contentType, filename: meta.filename, checksum: meta.checksum, witnessIdx: meta.index, txHash: cell.out_point.tx_hash };
+  // Concatenate chunks
+  const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+  const fileBytes = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const chunk of chunks) { fileBytes.set(chunk, offset); offset += chunk.length; }
+
+  return {
+    fileBytes,
+    contentType: meta.contentType,
+    filename:    meta.filename,
+    checksum:    meta.checksum,
+    witnessIdx:  meta.indexes[0],
+    chunkCount:  meta.indexes.length,
+    txHash:      cell.out_point.tx_hash,
+  };
 }
 
 // ── Utils ─────────────────────────────────────────────────────────────────────

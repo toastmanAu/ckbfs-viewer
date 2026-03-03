@@ -2,7 +2,7 @@ import { EXPLORER, formatSize } from '../lib/ckbfs-resolver.js';
 
 export function ViewerPanel({ result, blobUrl, network }) {
   if (!result) return null;
-  const { contentType, filename, checksum, witnessIdx, txHash, typeId, fileBytes } = result;
+  const { contentType, filename, checksum, witnessIdx, chunkCount, txHash, typeId, fileBytes } = result;
   const explorerUrl = `${EXPLORER[network]}/${txHash}`;
 
   const renderContent = () => {
@@ -41,7 +41,7 @@ export function ViewerPanel({ result, blobUrl, network }) {
         <span className="meta-kv"><span>File </span><span>{filename || '(unnamed)'}</span></span>
         <span className="meta-kv"><span>Size </span><span>{formatSize(fileBytes.length)}</span></span>
         <span className="meta-kv"><span>Checksum </span><span>0x{checksum.toString(16).padStart(8, '0')}</span></span>
-        <span className="meta-kv"><span>Witness </span><span>#{witnessIdx}</span></span>
+        {chunkCount > 1 && <span className="meta-kv"><span>Chunks </span><span>{chunkCount}</span></span>}
         <a href={explorerUrl} target="_blank" rel="noreferrer"
           style={{ marginLeft: 'auto', fontSize: '.8rem' }}>
           View tx ↗
